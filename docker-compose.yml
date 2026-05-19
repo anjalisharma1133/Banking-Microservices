@@ -1,0 +1,207 @@
+# Docker Compose for Scalable Microservices (Cloud-Ready)
+# Unified architecture using Kafka, Postgres, and Node.js Gateway.
+# Optimized for high-resource cloud environments.
+
+services:
+  # 1. FRONTEND & GATEWAY
+  frontend:
+    container_name: banking-frontend
+    image: banking/frontend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - TZ=Asia/Kolkata
+      - USE_REAL_SERVICES=true
+      - TRANSACTION_SERVICE_URL=http://transaction-service:8081
+      - AUDIT_SERVICE_URL=http://audit-service:8082
+      - ACCOUNT_SERVICE_URL=http://account-service:8083
+    volumes:
+      - ./db.json:/app/db.json
+    networks:
+      - banking-network
+
+  # 2. TRANSACTION SERVICE
+  transaction-service:
+    container_name: transaction-service
+    image: banking/transaction-service:latest
+    build:
+      context: ./spring-boot-reference
+      dockerfile: Dockerfile.java
+    ports:
+      - "8081:8081"
+    restart: always
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_APPLICATION_NAME=transaction-service
+      - SERVER_PORT=8081
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - ACCOUNT_SERVICE_URL=http://account-service:8083
+      - TZ=Asia/Kolkata
+      - DATABASE_URL=jdbc:postgresql://postgres-db:5432/banking_tx
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/banking_tx
+      - SPRING_DATASOURCE_USERNAME=admin
+      - SPRING_DATASOURCE_PASSWORD=password
+      - JAVA_OPTS=-Xmx384m -Xms200m -Djava.security.egd=file:/dev/urandom
+    depends_on:
+      kafka: { condition: service_healthy }
+      postgres-db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8081 || exit 1"]
+      interval: 20s
+      timeout: 15s
+      retries: 60
+      start_period: 120s
+    networks:
+      - banking-network
+  account-service:
+    container_name: account-service
+    image: banking/account-service:latest
+    build:
+      context: ./spring-boot-reference
+      dockerfile: Dockerfile.java
+    ports:
+      - "8083:8083"
+    restart: always
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_APPLICATION_NAME=account-service
+      - SERVER_PORT=8083
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - TZ=Asia/Kolkata
+      - DATABASE_URL=jdbc:postgresql://postgres-db:5432/banking_account
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/banking_account
+      - SPRING_DATASOURCE_USERNAME=admin
+      - SPRING_DATASOURCE_PASSWORD=password
+      - JAVA_OPTS=-Xmx384m -Xms200m -Djava.security.egd=file:/dev/urandom
+    depends_on:
+      kafka: { condition: service_healthy }
+      postgres-db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8083 || exit 1"]
+      interval: 20s
+      timeout: 15s
+      retries: 60
+      start_period: 120s
+    networks:
+      - banking-network
+ 
+  # 4. AUDIT SERVICE
+  audit-service:
+    container_name: audit-service
+    image: banking/audit-service:latest
+    build:
+      context: ./spring-boot-reference
+      dockerfile: Dockerfile.java
+    ports:
+      - "8082:8082"
+    restart: always
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_APPLICATION_NAME=audit-service
+      - SERVER_PORT=8082
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - TZ=Asia/Kolkata
+      - DATABASE_URL=jdbc:postgresql://postgres-db:5432/banking_audit
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/banking_audit
+      - SPRING_DATASOURCE_USERNAME=admin
+      - SPRING_DATASOURCE_PASSWORD=password
+      - JAVA_OPTS=-Xmx384m -Xms200m -Djava.security.egd=file:/dev/urandom
+    depends_on:
+      kafka: { condition: service_healthy }
+      postgres-db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8082 || exit 1"]
+      interval: 20s
+      timeout: 15s
+      retries: 60
+      start_period: 120s
+    networks:
+      - banking-network
+ 
+  # 5. NOTIFICATION SERVICE
+  notification-service:
+    container_name: notification-service
+    image: banking/notification-service:latest
+    build:
+      context: ./spring-boot-reference
+      dockerfile: Dockerfile.java
+    ports:
+      - "8084:8084"
+    restart: always
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_APPLICATION_NAME=notification-service
+      - SERVER_PORT=8084
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - TZ=Asia/Kolkata
+      - DATABASE_URL=jdbc:postgresql://postgres-db:5432/banking_notification
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/banking_notification
+      - SPRING_DATASOURCE_USERNAME=admin
+      - SPRING_DATASOURCE_PASSWORD=password
+      - GATEWAY_URL=http://frontend:3000/api/internal/push-email
+      - JAVA_OPTS=-Xmx384m -Xms200m -Djava.security.egd=file:/dev/urandom
+    depends_on:
+      kafka: { condition: service_healthy }
+      postgres-db: { condition: service_healthy }
+    networks:
+      - banking-network
+ 
+  # 6. KAFKA (KRaft Mode - No Zookeeper needed for cloud environments)
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092'
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+      KAFKA_LISTENERS: 'PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:29093,PLAINTEXT_HOST://0.0.0.0:29092'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: kafka
+      KAFKA_KRAFT_CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+      KAFKA_JVM_PERFORMANCE_OPTS: "-Xmx384m -Xms200m"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 60
+      start_period: 30s
+    networks:
+      - banking-network
+
+  # 6. POSTGRES (Alpine Version - Extremely small)
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: postgres-db
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_MULTIPLE_DATABASES=banking_account,banking_tx,banking_audit,banking_notification
+    volumes:
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    command: ["postgres"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d postgres"]
+      interval: 15s
+    networks:
+      - banking-network
+
+networks:
+  banking-network:
+    driver: bridge

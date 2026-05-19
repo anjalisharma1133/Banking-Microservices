@@ -1,0 +1,5 @@
+{
+  "name": "Banking Microservices System",
+  "description": "A high-performance microservices-native banking ecosystem featuring Kafka-based event sourcing, real-time auditing, and dynamic auto-scaling clusters.",
+  "requestFramePermissions": []
+}
