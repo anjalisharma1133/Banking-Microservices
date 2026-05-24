@@ -1,5 +1,4 @@
-# Dockerfile for Spring Boot Microservices
-# Standard multi-stage build for Java applications
+
 
 
 FROM maven:3.9.6-eclipse-temurin-17-alpine AS builder
