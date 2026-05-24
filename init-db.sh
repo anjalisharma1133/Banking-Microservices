@@ -1,7 +1,4 @@
-#!/bin/bash
 
-# Script to create multiple databases on startup
-# Compatible with official postgres docker image
 
 set -e
 set -u
