@@ -2,7 +2,7 @@ node_modules
 dist
 .git
 .env
-# db.json removed from here
+
 spring-boot-reference/target
 spring-boot-reference/.mvn
 *.log
